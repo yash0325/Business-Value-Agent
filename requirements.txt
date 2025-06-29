@@ -1,0 +1,6 @@
+streamlit
+jira
+langchain
+langchain-openai
+openai
+requests
