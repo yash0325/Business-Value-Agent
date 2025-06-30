@@ -113,12 +113,21 @@ def check_granularity(user_story):
 
 def extract_refined_story(description_text):
     """
-    Extract just the line under '**Refined User Story:**' in the markdown block.
-    Fallback to summary/description if not found.
+    Extract the actual user story from a markdown block produced by the refiner.
+    More robust against newlines, whitespace, or extra formatting.
     """
     if not description_text:
         return ""
-    match = re.search(r"\*\*Refined User Story:\*\*\s*([^\n]+)", description_text)
+    # Try strict match first
+    match = re.search(r"\*\*Refined User Story:\*\*\s*(.+)", description_text)
+    if match:
+        # If there's a new line before "**Acceptance Criteria:**", cut at that point
+        story_line = match.group(1).strip()
+        # Sometimes the story may spill to next line; try to capture just the first line
+        story_line = story_line.split('\n')[0].strip()
+        return story_line
+    # Try for "As a ..." type sentences as a fallback
+    match = re.search(r"(As a .+? so that .+?)(?:\n|$)", description_text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
     return description_text.strip()
@@ -249,6 +258,10 @@ if st.session_state.get("connected", False):
         refined_user_story = extract_refined_story(description)
         # Fallback to summary if extraction fails
         story_for_granularity = refined_user_story if refined_user_story else summary
+
+        # DEBUG: Show what will be checked for granularity!
+        st.markdown("#### 🛠️ Text sent for Granularity Check:")
+        st.code(story_for_granularity)
 
         st.subheader("Granularity Check")
         with st.spinner("Checking if user story is granular..."):
