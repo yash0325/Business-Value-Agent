@@ -66,7 +66,7 @@ def clear_connection_state():
         if k in st.session_state:
             del st.session_state[k]
 
-# --- DISCONNECT BUTTON ---
+# --- Disconnect Button ---
 if st.session_state.get("connected", False):
     colc, cold = st.columns([10, 1])
     with cold:
@@ -74,7 +74,7 @@ if st.session_state.get("connected", False):
             clear_connection_state()
             st.rerun()
 
-# --- CONNECTION FORM ---
+# --- Connection Form ---
 if not st.session_state.get("connected", False):
     st.subheader("Connect to Jira")
     with st.form("connection_form"):
@@ -111,7 +111,19 @@ def check_granularity(user_story):
     response = chain.run({"user_story": user_story})
     return response.strip().lower().startswith('yes')
 
-# --- IF CONNECTED, MAIN UI ---
+def extract_refined_story(description_text):
+    """
+    Extract just the line under '**Refined User Story:**' in the markdown block.
+    Fallback to summary/description if not found.
+    """
+    if not description_text:
+        return ""
+    match = re.search(r"\*\*Refined User Story:\*\*\s*([^\n]+)", description_text)
+    if match:
+        return match.group(1).strip()
+    return description_text.strip()
+
+# --- If connected, main UI ---
 if st.session_state.get("connected", False):
     jira_host = st.session_state["jira_host"]
     jira_email = st.session_state["jira_email"]
@@ -170,7 +182,7 @@ if st.session_state.get("connected", False):
 
     st.session_state["custom_field_id"] = custom_field_id
 
-    # --- BV PRIORITY EXTRACTION & SORT ---
+    # --- BV Priority Extraction & Sort ---
     def extract_bv_score(bv_field_val):
         if not bv_field_val:
             return None
@@ -230,12 +242,17 @@ if st.session_state.get("connected", False):
             issue_titles
         )
         selected_issue = filtered_issues[issue_titles.index(selected)]
-        story_input = f"{selected_issue.fields.summary}\n\n{selected_issue.fields.description or ''}".strip()
+        summary = selected_issue.fields.summary
+        description = selected_issue.fields.description or ""
 
-        # ---- GRANULARITY CHECK BEFORE BUSINESS VALUE ASSESSMENT ----
+        # --- EXTRACT ONLY THE USER STORY FOR GRANULARITY CHECK ---
+        refined_user_story = extract_refined_story(description)
+        # Fallback to summary if extraction fails
+        story_for_granularity = refined_user_story if refined_user_story else summary
+
         st.subheader("Granularity Check")
         with st.spinner("Checking if user story is granular..."):
-            is_granular = check_granularity(story_input)
+            is_granular = check_granularity(story_for_granularity)
 
         if not is_granular:
             st.warning(
@@ -250,8 +267,8 @@ if st.session_state.get("connected", False):
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("📝 Original Story")
-            st.markdown(f"**Summary:** {selected_issue.fields.summary}")
-            st.markdown(f"**Description:** {selected_issue.fields.description or ''}")
+            st.markdown(f"**Summary:** {summary}")
+            st.markdown(f"**Description:** {description}")
 
         with col2:
             st.subheader("💡 Business Value Assessment")
@@ -271,7 +288,7 @@ if st.session_state.get("connected", False):
                             prompt=PromptTemplate.from_template(BUSINESS_VALUE_PROMPT)
                         )
                         try:
-                            assessment = chain.run({"user_story": story_input, "context": context})
+                            assessment = chain.run({"user_story": f"{summary}\n\n{description}", "context": context})
                         except Exception as e:
                             st.error(f"OpenAI Error: {e}")
                             assessment = ""
